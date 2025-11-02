@@ -1,0 +1,88 @@
+!oi
+// Akinator + Preço (OpenAI) - Versão segura para Replit
+const { Client, GatewayIntentBits } = require('discord.js');
+const fetch = require('node-fetch');
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
+});
+
+const OPENAI_KEY = process.env.OPENAI_API_KEY; // coloque a chave no Secrets do Replit
+const DISCORD_TOKEN = process.env.DISCORD_TOKEN; // coloque o token do bot nos Secrets
+
+if (!OPENAI_KEY) {
+  console.error("ERRO: faltando OPENAI_API_KEY nas variáveis de ambiente.");
+  process.exit(1);
+}
+if (!DISCORD_TOKEN) {
+  console.error("ERRO: faltando DISCORD_TOKEN nas variáveis de ambiente.");
+  process.exit(1);
+}
+
+client.once('ready', () => {
+  console.log(`🤖 Bot logado como ${client.user.tag}`);
+});
+
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+
+  const content = message.content.trim();
+
+  // comando para pedir preço: !preco guefeira
+  if (content.toLowerCase().startsWith('!preco')) {
+    const parts = content.split(' ').filter(Boolean);
+    parts.shift(); // remove o comando
+    const item = parts.join(' ') || 'guefeira';
+
+    await message.channel.send(`🔎 Consultando IA para estimar o preço de: **${item}** ...`);
+
+    try {
+      const prompt = `
+Você é um assistente que fornece estimativas realistas de preço para um item de consumo chamado "${item}".
+Explique:
+1) Uma estimativa de preço (faixa) em BRL (reais) para o item, com base em similaridades (se for instrumento, peça, produto),
+2) Quais fatores influenciam esse preço,
+3) Uma sugestão de termos de busca que eu devo usar no Google/mercado livre/OLX para encontrar preços reais.
+
+Responda de forma curta e direta, em português.
+`;
+
+      const openaiResp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini', // ou 'gpt-4o' / 'gpt-4' dependendo da disponibilidade da sua chave
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 300,
+          temperature: 0.6
+        })
+      });
+
+      if (!openaiResp.ok) {
+        const txt = await openaiResp.text();
+        console.error('OpenAI error:', openaiResp.status, txt);
+        return message.channel.send('❌ Erro ao chamar a IA. Veja o console do Replit para mais detalhes.');
+      }
+
+      const data = await openaiResp.json();
+      const reply = data.choices?.[0]?.message?.content?.trim() || "Não obtive resposta da IA.";
+
+      // envia a resposta da IA pro Discord
+      await message.channel.send(`💡 Resultado da IA para **${item}**:\n\n${reply}`);
+    } catch (err) {
+      console.error('Erro na requisição OpenAI:', err);
+      await message.channel.send('❌ Ocorreu um erro ao consultar a IA. Tente novamente mais tarde.');
+    }
+  }
+
+  // comando antigo do akinator (exemplo simples)
+  if (content.toLowerCase() === '!akinator') {
+    await message.channel.send('Comando !akinator ainda está ativo — rodando a versão simples.');
+    // aqui você pode chamar a função do jogo que já tem no seu projeto
+  }
+});
+
+client.login(DISCORD_TOKEN);
